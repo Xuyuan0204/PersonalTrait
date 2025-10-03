@@ -1,0 +1,198 @@
+import os
+import torch
+import torch.nn.functional as F
+from sentence_transformers import SentenceTransformer, util
+from tqdm import tqdm
+from torch.nn.utils.parametrize import is_parametrized, remove_parametrizations
+import numpy as np
+def load_intervention_weights_consreft(reft_model, model_path,device):
+    file_list=os.listdir(model_path)
+    for file in file_list:
+        if file.endswith(".bin"):
+            checkpoint_path = os.path.join(model_path, file)
+            state_dict = torch.load(checkpoint_path, map_location=device)
+            
+            
+            for key, value in state_dict.items():
+
+                weight_key=file.split(".")[0].removeprefix('intkey_')
+               
+                if reft_model.interventions.state_dict()[weight_key+"."+key].shape == value.shape:
+                    reft_model.interventions.state_dict()[weight_key+"."+key].data.copy_(value)
+                    print(f"Loaded weights for {weight_key}.", f"shape: {reft_model.interventions.state_dict()[weight_key+'.'+key].shape}")
+                else:
+                    raise ValueError(f"Skipping {key} because shape mismatch: {reft_model.state_dict()[key].shape} != {value.shape}")
+               
+    return reft_model
+
+
+def load_intervention_weights_loreft(reft_model, model_path,device,reft_config):
+    file_list=os.listdir(model_path)
+ 
+    for file in file_list:
+        if file.endswith(".pt") and 'pytorch_model' not in file:
+           
+            
+            checkpoint_path = os.path.join(model_path, file)
+            state_dict = torch.load(checkpoint_path, map_location=device)
+            module_key= f"layer_{reft_config.representations[0].layer}_comp_block_output_unit_pos_nunit_1#0"
+            blk = reft_model.interventions[module_key].rotate_layer
+           
+
+# 1) If 'weight' is parametrized (Orthogonal), materialize it as a plain Parameter
+            if is_parametrized(blk, "weight"):
+                # leaves the current effective weight in blk.weight as a regular Parameter
+                remove_parametrizations(blk, "weight", leave_parametrized=True)
+
+            # 2) Now you can write directly to .weight.data
+            with torch.no_grad():
+                src = state_dict["rotate_layer"]  # your source tensor
+                blk.weight.data.copy_(src.to(dtype=blk.weight.dtype, device=blk.weight.device))
+
+            
+            reft_model.interventions[module_key].learned_source.weight.data.copy_(state_dict['weight'].float())
+            reft_model.interventions[module_key].learned_source.bias.data.copy_(state_dict['bias'].float())
+        
+
+            reft_model.interventions[module_key].learned_source = reft_model.interventions[module_key].learned_source.float()
+            
+
+            print(f"Loaded weights for {module_key}.", f"shape: {reft_model.interventions[module_key].rotate_layer.weight.shape}")
+        
+    return reft_model
+
+def reinit_intervention_weights(reft_model):
+    """
+    Reinitialize all intervention weights in a ReFT model.
+    
+    For LowRankRotateLayer weights: Use orthogonal initialization
+    For other weights (Linear layers, etc.): Use normal distribution
+    
+    Args:
+        reft_model: A PyReFT model with interventions attribute
+    
+    Returns:
+        reft_model: The model with reinitialized weights
+    """
+    for module_key, intervention in reft_model.interventions.items():
+        print(f"Reinitializing weights for intervention: {module_key}")
+        
+        # Handle rotate_layer specifically (LowRankRotateLayer with orthogonal parametrization)
+        if hasattr(intervention, 'rotate_layer'):
+            # The rotate_layer is wrapped with torch.nn.utils.parametrizations.orthogonal
+            # Access the base weight from the parametrization
+            if hasattr(intervention.rotate_layer, 'parametrizations') and hasattr(intervention.rotate_layer.parametrizations, 'weight'):
+                base_weight = intervention.rotate_layer.parametrizations.weight[0].base
+                torch.nn.init.orthogonal_(base_weight)
+                print(f"  - Orthogonally reinitialized rotate_layer with shape {base_weight.shape}")
+            elif hasattr(intervention.rotate_layer, 'weight'):
+                # Fallback for direct weight access
+                torch.nn.init.orthogonal_(intervention.rotate_layer.weight)
+                print(f"  - Orthogonally reinitialized rotate_layer with shape {intervention.rotate_layer.weight.shape}")
+        
+        # Handle learned_source (Linear layer)
+        if hasattr(intervention, 'learned_source'):
+            if hasattr(intervention.learned_source, 'weight'):
+                intervention.learned_source.reset_parameters()
+                print(f"  - Normal reinitialized learned_source.weight with shape {intervention.learned_source.weight.shape}")
+            if hasattr(intervention.learned_source, 'bias') and intervention.learned_source.bias is not None:
+                torch.nn.init.zeros_(intervention.learned_source.bias)
+                print(f"  - Zero reinitialized learned_source.bias with shape {intervention.learned_source.bias.shape}")
+        
+        # Handle any other trainable parameters
+        for name, param in intervention.named_parameters():
+            if param.requires_grad:
+                # Skip rotate_layer and learned_source as they're handled above
+                if 'rotate_layer' not in name and 'learned_source' not in name:
+                    torch.nn.init.normal_(param, mean=0.0, std=0.02)
+                    print(f"  - Normal reinitialized {name} with shape {param.shape}")
+    
+    return reft_model
+
+
+def compute_bert_score(reference, generated_text, rephrased_text, model_name='all-MiniLM-L6-v2'):
+    """
+    Compute BERT Score using SentenceTransformer to measure similarity between
+    reference text and generated/rephrased texts.
+    
+    Args:
+        reference (str): The reference text
+        generated_text (str): The generated text to compare with reference
+        rephrased_text (str): The rephrased text to compare with reference
+        model_name (str): SentenceTransformer model name (default: 'all-MiniLM-L6-v2')
+        
+    Returns:
+        dict: Dictionary containing similarity scores
+            - 'reference_vs_generated': cosine similarity between reference and generated text
+            - 'reference_vs_rephrased': cosine similarity between reference and rephrased text
+    """
+    # Initialize the SentenceTransformer model
+    model = SentenceTransformer(model_name)
+    
+    # Encode the texts to get embeddings
+    texts = [reference, generated_text, rephrased_text]
+    embeddings = model.encode(texts, convert_to_tensor=True)
+    
+    # Extract individual embeddings
+    ref_embedding = embeddings[0].unsqueeze(0)
+    gen_embedding = embeddings[1].unsqueeze(0)
+    rep_embedding = embeddings[2].unsqueeze(0)
+    
+    # Compute cosine similarities
+    ref_vs_gen_similarity = util.cos_sim(ref_embedding, gen_embedding,).item()
+    ref_vs_rep_similarity = util.cos_sim(ref_embedding, rep_embedding,).item()
+    
+    return {
+        'reference_vs_generated': ref_vs_gen_similarity,
+        'reference_vs_rephrased': ref_vs_rep_similarity
+    }
+
+
+def process_jsonl_with_bert_score(jsonl_path, output_path=None, model_name='all-MiniLM-L6-v2'):
+    """
+    Process a JSONL file to add BERT scores for each entry.
+    
+    Args:
+        jsonl_path (str): Path to input JSONL file
+        output_path (str): Path to output JSONL file (if None, adds '_with_bert_scores' to input path)
+        model_name (str): SentenceTransformer model name
+        
+    Returns:
+        str: Path to the output file
+    """
+    import json
+    
+    if output_path is None:
+        output_path = jsonl_path.replace('.jsonl', '_with_bert_scores.jsonl')
+    
+    with open(jsonl_path, 'r', encoding='utf-8') as infile, \
+         open(output_path, 'w', encoding='utf-8') as outfile:
+        
+
+        original_data = []
+        rephrased_data = []
+        for line in tqdm(infile):
+            data = json.loads(line.strip())
+            
+            # Extract the required fields
+            reference = data.get('reference', '')
+            generated_text = data.get('generated_text', '')
+            rephrased_text = data.get('rephrased_text', '')
+            
+            # Compute BERT scores
+            bert_scores = compute_bert_score(reference, generated_text, rephrased_text, model_name)
+        
+            # Add BERT scores to the data
+            data['bert_score_ref_vs_gen'] = bert_scores['reference_vs_generated']
+            data['bert_score_ref_vs_rep'] = bert_scores['reference_vs_rephrased']
+
+            original_data.append(bert_scores['reference_vs_generated'])
+            rephrased_data.append(bert_scores['reference_vs_rephrased'])
+            
+            # Write the updated data
+            outfile.write(json.dumps(data) + '\n')
+
+        print("Original data mean: ", np.mean(original_data))
+        print("Rephrased data mean: ", np.mean(rephrased_data))
+ 
+    return output_path
