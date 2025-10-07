@@ -2,7 +2,7 @@
 
 ## Overview
 
-**RILKE** (<u>R</u>epresentation <u>I</u>ntervention for <u>L</u>ifelong <u>K</u>nowledg<u>E</u> Control) is a comprehensive training and testing framework for lifelong knowledge editing. It implements an innovative approach to model editing using ReFT (Representation Fine-Tuning) with activation-based adapter selection.
+**RILKE** (<u>R</u>epresentation <u>I</u>ntervention for <u>L</u>ifelong <u>K</u>nowledg<u>E</u> Control) is a comprehensive training and testing framework for lifelong knowledge editing. It implements an innovative approach to model editing using ReFT (Representation Fine-Tuning) with activation-based intervention selection.
 
 ## Architecture
 
@@ -27,10 +27,10 @@ Here `--datasrc` denotes whether to store activations of edit data seen during t
 
 For **RILKE**'s individual training, we use `no_batched_train.py`. 
 
-- **Individual Adapter Creation**: For each data point in the dataset:
+- **Individual Intervention Creation**: For each data point in the dataset:
   - Reinitializes the ReFT module weights
-  - Trains a specialized adapter on a single question-answer pair
-  - Saves adapter weights for later retrieval
+  - Trains a specialized intervention on a single question-answer pair
+  - Saves intervention weights for later retrieval
 
 - **Supported Intervention Types**:
   - `Vanilla`: Standard ReFT intervention
@@ -47,7 +47,7 @@ python no_batched_train.py  --record True  --adv_train_method Vanilla --wandb_pr
 - `--num_samples`: Number of samples from dataset to process
 - `--dataset`: Dataset choice (unke, unke_v3, anyedit)
 - `--adv_train_method`: Training method (Vanilla, Explicit)
-- `--save_weights_dir`: Directory to save adapter weights
+- `--save_weights_dir`: Directory to save intervention weights
 - `--record`: Enable W&B logging
 - `--rank`: Rank of intervention module
 - `--drop_out`: Dropout rate for intervention module
@@ -63,7 +63,7 @@ To test **RILKE**'s performance at inference, we use `test_rep.py`. It contains 
 - **Activation-Based Retrieval**:
   - Loads pre-computed activation embeddings for all training samples
   - For each test query, computes cosine similarity with stored activations
-  - Selects the adapter corresponding to the most similar activation
+  - Selects the intervention corresponding to the most similar activation
 
 - **Dual Query Evaluation**:
   - Tests on original questions
@@ -92,7 +92,7 @@ python test_single_rep.py --dataset unke \
 - `--num_samples`: Number of samples from dataset to process
 - `--dataset`: Dataset choice (unke, unke_v3, anyedit)
 - `--activation_path`: Path to pre-computed activations for training set
-- `--save_weights_dir`: Directory to saved adapter weights
+- `--save_weights_dir`: Directory to saved intervention weights
 - `--rephrased_query_activation_path`: Path to pre-computed activations for paraphrased queries, used for evaluation generalization
 - `--rank`: Rank of trained intervention module
 
