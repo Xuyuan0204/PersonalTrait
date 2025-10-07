@@ -103,8 +103,6 @@ def Reft_train(config):
         edit_dataset = UnkeForDirectOpt().get_dataset_v3()
 
 
-    # Set num_samples to full dataset size for batch training
-
 
     print(f"Training on full dataset with {config.num_samples} samples")
 
@@ -177,14 +175,12 @@ def Reft_train(config):
     reft_model = get_reft_model(model, reft_config)
     reft_model.print_trainable_parameters()
 
-    # get training data to train our intervention to remember the following sequence
-
+    
     batch_triggers = [tokenizer.apply_chat_template([ {"role": "user", "content": f"{q}"}], tokenize=False) for q in edit_questions]
     # batch_triggers = edit_questions
     batch_sequences = [f"{a}" for a in edit_answers]
     batch_rephrase_questions = [tokenizer.apply_chat_template([{"role": "user", "content": f"{q}"}], tokenize=False) for q in edit_rephrase_questions]
     
-    # Load cluster indices and reorder dataset based on clusters
     cluster_indices_path = "./outputs/activation/unke/unke_3_hac_similarity0.9_maxsize8_clusters_no_answer_last.json"
     
     
@@ -194,7 +190,6 @@ def Reft_train(config):
     with open(cluster_indices_path, 'r') as f:
         cluster_data = json.load(f)
     
-    # Create ordered list of indices based on clusters
     ordered_indices = []
     cluster_info = []
     if config.num_samples is not None:
@@ -307,20 +302,16 @@ def Reft_train(config):
         print(f"\n{'='*20} Training on Cluster {cluster_id} ({cluster_idx + 1}/{len(cluster_info)}) {'='*20}")
         print(f"Cluster size: {cluster_size} samples")
         
-        # Reinitialize REFT module before training on each cluster
         print(f"Reinitializing REFT module for cluster {cluster_id}...")
         reft_model = reinit_intervention_weights(reft_model)
         
-        # Prepare cluster data for training
         trigger = batch_triggers[start_idx:end_idx]
         sequence = batch_sequences[start_idx:end_idx]
         rephrase = batch_rephrase_questions[start_idx:end_idx]
         
-        # Create data module for cluster
         cluster_data_module = make_last_position_supervised_data_module(
             tokenizer, model, trigger, sequence)
         
-        # Create trainer for this cluster
         if config.adv_train_method == "Adv_Explicit" or config.adv_train_method == "Explicit": 
             trainer = ReftTrainerAdv(
                 lambda_consistency=config.lambda_consistency,
@@ -342,14 +333,12 @@ def Reft_train(config):
                 args=training_args, **cluster_data_module)
         else:
             raise ValueError(f"Invalid adv_train_method: {config.adv_train_method}")
-        # Train on cluster
+      
         print(f"Training REFT model on cluster {cluster_id} with {cluster_size} samples...")
         _ = trainer.train()
         
-        # Evaluate on the trained cluster
         print(f"Evaluating on trained cluster {cluster_id}...")
         
-        # Test on original question
         for index in range(len(trigger)):
             test_prompt_tokens = tokenizer(trigger[index], return_tensors="pt").to(device)
             base_unit_location = test_prompt_tokens["input_ids"].shape[-1] - 1
@@ -386,7 +375,6 @@ def Reft_train(config):
             rephrased_score = scorer.score(sequence[index], generated_rephrased_text)
             rephrased_rouge_score = rephrased_score["rougeL"].recall
             
-            # Store results with proper global indexing
             global_idx = start_idx + index
             result = {
                 "data_idx": global_idx,
@@ -444,11 +432,9 @@ def Reft_train(config):
             weights_store = os.path.join(weights_store, weights_base_dir)
             os.makedirs(weights_store, exist_ok=True)
             
-            # Create directory structure: save_weights_dir/adapter_{data_idx}/
             adapter_dir = os.path.join(weights_store, f"adapter_{cluster_idx}")
             os.makedirs(adapter_dir, exist_ok=True)
             breakpoint()
-            # Save only the intervention-specific weights
             for module_key, intervention in reft_model.interventions.items():
                 if hasattr(intervention, 'state_dict'):
                     adapter_weights = intervention.state_dict()
@@ -461,8 +447,6 @@ def Reft_train(config):
     print("\n" + "="*50)
     print("Cluster-based batch training completed!")
 
-    # Calculate and print overall statistics
-    original_scores = [r["rouge_score"] for r in all_results]
     rephrased_scores = [r["rephrased_rouge_score"] for r in all_results]
 
     print(f"Overall Statistics:")
@@ -479,14 +463,11 @@ def Reft_train(config):
             "final_avg_rephrased_rouge": sum(rephrased_scores)/len(rephrased_scores),
         })
 
-    # Save all results
     print(f"Saving results to reft_results/reft_results_cluster_batched.jsonl...")
     os.makedirs(f"reft_results/{config.output_dir}", exist_ok=True)
     with open(f"reft_results/{config.output_dir}/results.jsonl", "w") as f:
         for result in all_results:
             f.write(json.dumps(result) + "\n")
-    
-    # Save cluster information
     print(f"Saving cluster information to reft_results/cluster_info.json...")
   
 

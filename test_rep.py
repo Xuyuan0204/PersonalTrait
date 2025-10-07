@@ -65,29 +65,20 @@ def evaluate_rep(config):
     if config.test_rephrase:
         data_rephrase_questions = [sample["para_question"] for sample in data_samples]
         
-
-    # load model (take 1 min)
     model = transformers.AutoModelForCausalLM.from_pretrained(
         config.model_name, device_map=device)
-
-
-
-    # get tokenizer
     model_max_length = 2048
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         config.model_name, model_max_length=model_max_length, 
         padding_side="right", use_fast=False)
     tokenizer.pad_token = tokenizer.unk_token
 
-    # Load the pre-trained ReFT model
     print(f"Loading pre-trained ReFT model from {config.model_path}...")
     reft_config = ReftConfig(representations={
         "layer": config.target_layer, "component": "block_output",
         "intervention": LoreftIntervention(
         embed_dim=model.config.hidden_size,
         low_rank_dimension=config.rank)})
-
- 
 
     reft_model = get_reft_model(model, reft_config)
     if reft_config.to_dict()['intervention_types'][0].__name__ == 'LoreftIntervention':

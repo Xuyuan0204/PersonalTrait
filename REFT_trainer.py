@@ -14,7 +14,6 @@ class ReftTrainerImplicit(ReftTrainerForCausalLM):
         self.config = config
     
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        # Compute the original loss
         if return_outputs:
             loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
         else:
@@ -25,16 +24,12 @@ class ReftTrainerImplicit(ReftTrainerForCausalLM):
        
         
         
-        # Collect consistency losses from LoreftIntervention_Consistency interventions
         if self.lambda_consistency > 0 and hasattr(model, 'interventions'):
             for module_key, intervention in model.interventions.items():
-                # Check if this intervention is of type LoreftIntervention_Consistency
                 if hasattr(intervention, 'lambda_consistency') and intervention.lambda_consistency > 0:
-                    # During forward pass, consistency-enabled interventions store their losses
                     if hasattr(intervention, '_last_consistency_loss') and intervention._last_consistency_loss is not None:
                         total_consistency_loss += intervention._last_consistency_loss
                         num_consistency_interventions += 1
-                        # Clear the stored loss to avoid double-counting
                         intervention._last_consistency_loss = None
         
     
@@ -56,10 +51,8 @@ class ReftTrainerAdv(ReftTrainerForCausalLM):
         self.config = config
     
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        # First forward pass (adversarial path according to current intervention settings)
         outputs_adv, _ = super().compute_loss(model, inputs, return_outputs=True)
 
-        # Second forward pass with adversarial intervention disabled to get clean logits
         original_adv_epsilons = {}
         if hasattr(model, 'interventions'):
             for module_key, intervention in model.interventions.items():
@@ -71,23 +64,18 @@ class ReftTrainerAdv(ReftTrainerForCausalLM):
             with torch.no_grad():
                 outputs_clean, _ = super().compute_loss(model, inputs, return_outputs=True)
         finally:
-            # Restore adversarial epsilons
             for module_key, epsilon_value in original_adv_epsilons.items():
                 model.interventions[module_key].adv_epsilon = epsilon_value
 
-        # Base loss from adversarial forward
         total_loss = outputs_adv.loss
-        # Compute KL divergence at final layer (logits) between clean and adversarial outputs
         if self.lambda_consistency > 0:
             logits_adv = outputs_adv.logits  # [B, T, V]
             logits_clean = outputs_clean.logits  # [B, T, V]
 
             log_p_adv = F.log_softmax(logits_adv, dim=-1)
             p_clean = F.softmax(logits_clean, dim=-1)
-            # token-wise KL(p_clean || p_adv)
             kl_per_token = F.kl_div(log_p_adv, p_clean, reduction='none').sum(dim=-1)  # [B, T]
 
-            # Masking if attention_mask provided
             if 'attention_mask' in inputs and inputs['attention_mask'] is not None:
                 mask = inputs['attention_mask'].to(kl_per_token.dtype)
                 kl_sum = (kl_per_token * mask).sum()
@@ -101,10 +89,7 @@ class ReftTrainerAdv(ReftTrainerForCausalLM):
 
 
 class ReftTrainerCertified(ReftTrainerForCausalLM):
-    """
-    ReftTrainer with Spectral regularization for controlling global Lipschitz constant.
-    Follows the same pattern as ReftTrainerAdv but adds spectral regularization based on A = I + R⊤(W - R).
-    """
+   
     def __init__(self, lambda_consistency=0.1, config=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.lambda_spectral = lambda_consistency

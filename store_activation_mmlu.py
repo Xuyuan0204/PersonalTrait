@@ -11,11 +11,6 @@ import yaml
 from datasets import load_dataset, Dataset, concatenate_datasets
 from peft import get_peft_model, LoraConfig
 from torch.utils.data import DataLoader
-from src.dataset.tofu import TOFUForDirectOpt, TOFUForMemory
-from src.dataset.toxic import ToxicForDirectOpt, ToxicForMemory
-from src.dataset.tofu_in import TOFUInForDirectOpt
-from src.dataset.zsre import ZsreForDirectOpt
-from src.dataset.wiki import WikiForDirectOpt
 from src.models.adapter import INRELEVANT_LABEL, UNLEARN_LABEL, EDIT_LABEL
 
 from tqdm import tqdm

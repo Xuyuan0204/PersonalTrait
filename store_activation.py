@@ -11,20 +11,9 @@ import yaml
 from datasets import load_dataset, Dataset, concatenate_datasets
 from peft import get_peft_model, LoraConfig
 from torch.utils.data import DataLoader
-from src.dataset.tofu import TOFUForDirectOpt, TOFUForMemory
-from src.dataset.toxic import ToxicForDirectOpt, ToxicForMemory
-from src.dataset.tofu_in import TOFUInForDirectOpt
-from src.dataset.zsre import ZsreForDirectOpt
-from src.dataset.wiki import WikiForDirectOpt
-from src.models.adapter import INRELEVANT_LABEL, UNLEARN_LABEL, EDIT_LABEL
 import evaluate
 import pdb
 from tqdm import tqdm
-from src.models.hparams import HyperParams, LoKaHyperParams
-from src.models.loka_model import LOKA, LOKACodeBook, LOKABinary, LOKABinaryCodeBook, LOKARandMapCodeBook
-from src.models.ablation_model import FT
-from src.evaluate.tofu_eval import eval_tofu_unlearn
-from src.evaluate.utils import compute_prob
 from transformers import AutoModel,AutoTokenizer
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 from torch import Tensor
@@ -256,11 +245,10 @@ class GetHookedValue:
     
 
 
-def store_activations(dataset_name="unke", only_question=False, data_src="original"):
+def store_activations(model_name="meta-llama/Llama-3.1-8B-Instruct", dataset_name="unke", only_question=False, data_src="original"):
 
 
     
-    model_name = "meta-llama/Llama-3.1-8B-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if dataset_name == "unke":
         edit_dataset = UnkeForDirectOpt().get_dataset()
@@ -300,5 +288,12 @@ def store_activations(dataset_name="unke", only_question=False, data_src="origin
     
 
 if __name__ == "__main__":
-    store_activations(dataset_name="anyedit", only_question=True, data_src="rephrased")
-    store_activations(dataset_name="anyedit", only_question=True, data_src="original")
+    # store_activations(dataset_name="anyedit", only_question=True, data_src="rephrased")
+    # store_activations(dataset_name="anyedit", only_question=True, data_src="original")
+    argparse = argparse.ArgumentParser()
+    argparse.add_argument("--dataset_name", type=str, default="unke_v3")
+    argparse.add_argument("--only_question", type=bool, default=True)
+    argparse.add_argument("--data_src", type=str, default="original")
+    argparse.add_argument("--model_name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
+    args = argparse.parse_args()
+    store_activations(model_name=args.model_name, dataset_name=args.dataset_name, only_question=args.only_question, data_src

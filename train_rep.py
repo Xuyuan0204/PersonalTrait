@@ -43,7 +43,7 @@ class ReftHyperparameters:
     record: bool = False
     wandb_project: str = "reft_batch"
     dataset: str = "unke"
-    noise_std: float = 0.005  # Bottleneck noise standard deviation for hidden representations
+    noise_std: float = 0.005  
     drop_out: float = 0.05
     adv_train_method: str = "Adv_Explicit"
     epochs: int = 1000
@@ -93,13 +93,11 @@ def Reft_train(config):
         edit_data = json.load(open("datasets/tofu/tofu_last_400_edit_data.json"))
         edit_dataset = Dataset.from_dict(edit_data)
 
-    # Set num_samples to full dataset size for batch training
 
 
     print(f"Training on full dataset with {config.num_samples} samples")
 
     data_examples = edit_dataset
-    # data_examples = ReplayDataset(data_examples, tokenizer, sample_ratio=3)
 
     data_examples = data_examples.select(range(300))
     edit_questions = [sample["question"] for sample in data_examples]
@@ -134,13 +132,10 @@ def Reft_train(config):
                 for i, (trigger, target) in enumerate(zip(self.batch_triggers, self.batch_sequences)):
                     if i not in sample_indices:
                         continue
-                    # Use the same method as final testing - no additional "\n"
                     test_prompt_tokens = self.tokenizer(trigger, return_tensors="pt").to(device)
                     
-                    # Get the position for intervention (same as final test method)
                     base_unit_location = test_prompt_tokens["input_ids"].shape[-1] - 1
                     
-                    # Generate response using same parameters as final test
                     _, steered_responses = self.reft_model.generate(
                         test_prompt_tokens, 
                         unit_locations={"sources->base": (None, [[[base_unit_location]]])},
@@ -151,7 +146,7 @@ def Reft_train(config):
                         early_stopping=True,
                     )
 
-                    # Use same text extraction method as final test (full response)
+                    
 
                     generated_text = self.tokenizer.decode(steered_responses[0][len(test_prompt_tokens["input_ids"][0]):], skip_special_tokens=True)
 
@@ -159,8 +154,7 @@ def Reft_train(config):
                     rouge_score = score["rougeL"].recall
                     total_rouge += rouge_score
                     
-                    #rephrase the question
-
+                    
 
                     rephrase_prompt_tokens = self.tokenizer(self.batch_rephrase_questions[i], return_tensors="pt").to(device)
                     base_unit_location = rephrase_prompt_tokens["input_ids"].shape[-1] - 1
@@ -267,13 +261,9 @@ def Reft_train(config):
     reft_model = get_reft_model(model, reft_config)
     reft_model.print_trainable_parameters()
 
-    # get training data to train our intervention to remember the following sequence
-
     batch_triggers = [tokenizer.apply_chat_template([ {"role": "user", "content": f"{q}"}], tokenize=False) for q in edit_questions]
-    # batch_triggers = edit_questions
     batch_sequences = [f"{a}" for a in edit_answers]
     batch_rephrase_questions = [tokenizer.apply_chat_template([{"role": "user", "content": f"{q}"}], tokenize=False) for q in edit_rephrase_questions]
-    # shuffle the data but keep the same order of the original dataset
     data_indices = list(range(len(batch_triggers)))
 
 
@@ -334,7 +324,6 @@ def Reft_train(config):
             args=training_args, **data_module)
         print("Using Vanilla ReFT")
 
-    # Batch training: process each data point individually with REFT module reinitialization
     print("Starting batch training on all data points...")
     print("=" * 50)
 
@@ -344,20 +333,16 @@ def Reft_train(config):
     for data_idx in range(0,len(batch_triggers),config.num_samples):
         print(f"\n{'='*20} Training on Data Point {data_idx + 1}/{len(batch_triggers)} {'='*20}")
         
-        # Reinitialize REFT module before training on each data point
         print(f"Reinitializing REFT module for data point {data_idx + 1}...")
         reft_model = reinit_intervention_weights(reft_model)
         
-        # Prepare single data point for training
         trigger = batch_triggers[data_idx:data_idx+config.num_samples]
         sequence = batch_sequences[data_idx:data_idx+config.num_samples]
         rephrase = batch_rephrase_questions[data_idx:data_idx+config.num_samples]
         
-        # Create data module for single data point
         single_data_module = make_last_position_supervised_data_module(
             tokenizer, model, trigger, sequence)
         
-        # Create trainer for this data point
         if config.adv_train_method == "Adv_Explicit" or config.adv_train_method == "Explicit": 
             trainer = ReftTrainerAdv(
                 lambda_consistency=config.lambda_consistency,
@@ -373,14 +358,11 @@ def Reft_train(config):
                 model=reft_model, tokenizer=tokenizer,
                 args=training_args, **single_data_module)
         
-        # Train on single data point
         print(f"Training REFT model on data point {data_idx + 1}...")
         _ = trainer.train()
         
-        # Evaluate on the trained data point
         print(f"Evaluating on trained data point {data_idx + 1}...")
         
-        # Test on original question
         for index in range(len(trigger)):
             test_prompt_tokens = tokenizer(trigger[index], return_tensors="pt").to(device)
             base_unit_location = test_prompt_tokens["input_ids"].shape[-1] - 1
@@ -417,7 +399,6 @@ def Reft_train(config):
             rephrased_score = scorer.score(sequence[index], generated_rephrased_text)
             rephrased_rouge_score = rephrased_score["rougeL"].recall
             
-            # Store results
             result = {
                 "data_idx": index,
                 "question": trigger[index], 
@@ -431,8 +412,6 @@ def Reft_train(config):
             all_results.append(result)
             rouge_scores.append(rouge_score)
             rephrased_rouge_scores.append(rephrased_rouge_score)
-        # Log to wandb if recording
-    
         
             print(f"Data Point {index} Results:")
             print(f"  Original Rouge-L: {rouge_score:.3f}")
@@ -453,7 +432,6 @@ def Reft_train(config):
     print("\n" + "="*50)
     print("Batch training completed!")
 
-    # Calculate and print overall statistics
     original_scores = [r["rouge_score"] for r in all_results]
     rephrased_scores = [r["rephrased_rouge_score"] for r in all_results]
 

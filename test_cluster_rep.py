@@ -57,42 +57,31 @@ class ReftHyperparameters:
 
 
 def load_activation_embeddings(activation_path):
-    """Load and preprocess activation embeddings from .pt file"""
     activations = torch.load(activation_path, map_location='cpu')
     
-    # Handle list of tensors case
     if isinstance(activations, list):
         activations = torch.stack(activations)
     
-    # Squeeze if necessary (shape [N, 1, D] -> [N, D])
     if len(activations.shape) == 3 and activations.shape[1] == 1:
         activations = activations.squeeze(1)
     
     return activations
 
 def compute_similarity_with_activations(query_embedding, activation_embeddings):
-    """
-    Compute cosine similarity between query embedding and activation embeddings.
-    Returns index of most similar activation.
-    """
-    # Normalize embeddings for cosine similarity
-  
+    
     similarities = F.cosine_similarity(query_embedding, activation_embeddings, dim=1)
     
-    # Return index of highest similarity
     best_idx = similarities.argmax().item()
     best_score = similarities[best_idx].item()
 
     return best_idx, best_score
 
 def load_reft_adapter(reft_model, adapter_weights_dir, adapter_idx, device, config):
-    """Load specific adapter weights into the ReFT model"""
     adapter_path = os.path.join(adapter_weights_dir, f"adapter_{adapter_idx}")
     
     if not os.path.exists(adapter_path):
         raise FileNotFoundError(f"Adapter directory not found: {adapter_path}")
     
-    # Load intervention weights - reuse existing loading function
     reft_config = ReftConfig(representations={
         "layer": config.target_layer, "component": "block_output",
         "intervention": LoreftIntervention(
@@ -105,11 +94,8 @@ def load_reft_adapter(reft_model, adapter_weights_dir, adapter_idx, device, conf
 
 def evaluate_rep(config):
     
-
     scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
     if config.dataset == "unke_v3":
         edit_dataset = UnkeForDirectOpt().get_dataset_v3()
     elif config.dataset == "anyedit":
@@ -124,15 +110,9 @@ def evaluate_rep(config):
     if config.test_rephrase:
         data_rephrase_questions = [sample["para_question"] for sample in data_samples]
         
-    # Load activation embeddings for similarity comparison
-    print(f"Loading activation embeddings from {config.activation_path}...")
-    activation_embeddings = load_activation_embeddings(config.activation_path)[:config.num_samples].to(device)
-    print(f"Loaded {activation_embeddings.shape[0]} activation embeddings with dimension {activation_embeddings.shape[1]}")
     
-    # Load query embeddings
-    print(f"Loading original query embeddings from {config.original_query_activation_path}...")
+    activation_embeddings = load_activation_embeddings(config.activation_path)[:config.num_samples].to(device)
    
-
     with open(config.cluster_indices_path, 'r') as f:
         cluster_data = json.load(f)
     print(f"Loaded {len(cluster_data)} cluster indices")
@@ -140,7 +120,6 @@ def evaluate_rep(config):
 
     index_embeddings = []
     
-    # Build mapping from data_idx to cluster_id
     data_idx_to_cluster_id = {}
     for cluster_id, indices in tqdm(cluster_data.items()):
         for data_idx in indices:
@@ -157,7 +136,6 @@ def evaluate_rep(config):
         rephrased_query_embeddings = load_activation_embeddings(config.rephrased_query_activation_path)[:config.num_samples].to(device)
         print(f"Loaded {rephrased_query_embeddings.shape[0]} rephrased query embeddings")
         
-    # Validate that we have enough query embeddings for the number of samples
     if original_query_embeddings.shape[0] < config.num_samples:
         raise ValueError(f"Not enough original query embeddings: {original_query_embeddings.shape[0]} < {config.num_samples}")
     
@@ -165,7 +143,6 @@ def evaluate_rep(config):
         raise ValueError(f"Not enough rephrased query embeddings: {rephrased_query_embeddings.shape[0]} < {config.num_samples}")
         
 
-    # load model (take 1 min)
     model = transformers.AutoModelForCausalLM.from_pretrained(
         config.model_name, device_map=device)
 
@@ -173,15 +150,12 @@ def evaluate_rep(config):
     rephrased_query_embeddings = rephrased_query_embeddings.to(device)
     activation_embeddings = activation_embeddings.to(device)
 
-    # get tokenizer
     model_max_length = 2048
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         config.model_name, model_max_length=model_max_length, 
         padding_side="right", use_fast=False)
     tokenizer.pad_token = tokenizer.unk_token
 
-    # Initialize ReFT model structure (without loading specific weights yet)
-    print("Initializing ReFT model structure...")
     reft_config = ReftConfig(representations={
         "layer": config.target_layer, "component": "block_output",
         "intervention": LoreftIntervention(
@@ -208,10 +182,6 @@ def evaluate_rep(config):
     results = []
     for data_idx, item in enumerate(range(len(batch_triggers))):
         print("==="*30)
-        print(f"Processing item {item+1}/{len(batch_triggers)}")
-        
-        # For original query: use pre-computed embedding and select adapter
-        print(f"Original query: '{data_questions[item]}'")
         query_embedding = original_query_embeddings[item]
         best_idx, best_score = compute_similarity_with_activations(query_embedding.to(device), activation_embeddings)
         best_idx = data_idx_to_cluster_id[best_idx]
@@ -252,9 +222,6 @@ def evaluate_rep(config):
         }
 
         if config.test_rephrase:
-            # For rephrased query: use pre-computed embedding and select adapter (possibly different)
-            
-            print(f"Rephrased query: '{data_rephrase_questions[item]}'")
             rephrase_query_embedding = rephrased_query_embeddings[item]
             rephrase_best_idx, rephrase_best_score = compute_similarity_with_activations(rephrase_query_embedding, activation_embeddings)
             rephrase_best_idx = data_idx_to_cluster_id[rephrase_best_idx]

@@ -57,7 +57,6 @@ def extract_answer_choice(response):
     import re
     response = response.strip().upper()
     
-    # Look for answer patterns
     patterns = [
         r'\b([ABCD])\b',  # Single letter
         r'ANSWER[:\s]*([ABCD])',  # "Answer: A" format
@@ -69,7 +68,6 @@ def extract_answer_choice(response):
         if match:
             return match.group(1)
     
-    # If no clear pattern, take first A/B/C/D found
     for char in response:
         if char in 'ABCD':
             return char
@@ -111,29 +109,21 @@ def load_activation_embeddings(activation_path):
     """Load and preprocess activation embeddings from .pt file"""
     activations = torch.load(activation_path, map_location='cpu')
     
-    # Handle list of tensors case
     if isinstance(activations, list):
         activations = torch.stack(activations)
     
-    # Squeeze if necessary (shape [N, 1, D] -> [N, D])
     if len(activations.shape) == 3 and activations.shape[1] == 1:
         activations = activations.squeeze(1)
     
     return activations
 
 def compute_similarity_with_activations(query_embedding, activation_embeddings):
-    """
-    Compute cosine similarity between query embedding and activation embeddings.
-    Returns index of most similar activation.
-    """
-    # Normalize embeddings for cosine similarity
+   
     query_norm = F.normalize(query_embedding.unsqueeze(0), p=2, dim=1)
     activation_norm = F.normalize(activation_embeddings, p=2, dim=1)
     
-    # Compute similarities
     similarities = torch.mm(query_norm, activation_norm.T).squeeze(0)
     
-    # Return index of highest similarity
     best_idx = similarities.argmax().item()
     best_score = similarities[best_idx].item()
     
@@ -219,7 +209,6 @@ def evaluate_rep(config):
         print("==="*30)
         print(f"Processing item {item+1}/{len(batch_triggers)}")
         
-        # For original query: use pre-computed embedding and select adapter
         print(f"Original query: '{data_questions[item]}'")
         query_embedding = original_query_embeddings[item]
         best_idx, best_score = compute_similarity_with_activations(query_embedding, activation_embeddings)
@@ -228,7 +217,6 @@ def evaluate_rep(config):
         
         test_prompt_tokens = tokenizer(batch_triggers[item], return_tensors="pt").to(device)
         
-        # Check if similarity score meets threshold
         if best_score >= config.similarity_threshold:
             print(f"Using ReFT intervention (score {best_score:.4f} >= threshold {config.similarity_threshold})")
             reft_model = load_reft_adapter(reft_model, config.adapter_weights_dir, best_idx, device, config)

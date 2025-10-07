@@ -28,7 +28,6 @@ from pyreft import (
     LoreftIntervention
 )
 import numpy as np
-from src.dataset.unke import UnkeForDirectOpt
 import wandb
 from REFT_module import LoreftIntervention_Implicit, LoreftIntervention_Explicit, LoreftIntervention_Adv_Explicit
 from REFT_trainer import ReftTrainerImplicit, ReftTrainerAdv
@@ -183,7 +182,6 @@ def Reft_train(config):
     print(f"Training on dataset with {config.num_samples} samples")
 
     data_examples = edit_dataset.select(sample_indices)
-    # data_examples = ReplayDataset(data_examples, tokenizer, sample_ratio=3)
 
 
     edit_questions = [sample["question"] for sample in data_examples]
@@ -233,9 +231,9 @@ def Reft_train(config):
                 embed_dim=model.config.hidden_size,
                 low_rank_dimension=config.rank,
                 dropout_rate=config.drop_out,
-                adv_epsilon=config.adv_epsilon,       # magnitude of adversarial ball
-                adv_steps=config.adv_steps,            # PGD steps (1 = FGSM)
-                adv_norm=config.adv_norm,          # "l2" or "linf"
+                adv_epsilon=config.adv_epsilon,    
+                adv_steps=config.adv_steps,           
+                adv_norm=config.adv_norm,          
                 init_noise_std=config.noise_std
             )})
     elif config.adv_train_method == "Vanilla":
@@ -475,10 +473,7 @@ def Reft_test(config):
     results = []
     for data_idx, item in enumerate(range(len(batch_triggers))):
         print("==="*30)
-        print(f"Processing item {item+1}/{len(batch_triggers)}")
         
-        # For original query: use pre-computed embedding and select adapter
-        print(f"Original query: '{data_questions[item]}'")
         query_embedding = original_query_embeddings[item]
         best_idx, best_score = compute_similarity_with_activations(query_embedding, activation_embeddings)
        
@@ -520,8 +515,6 @@ def Reft_test(config):
         }
 
         if config.test_rephrase:
-            # For rephrased query: use pre-computed embedding and select adapter (possibly different)
-            
             print(f"Rephrased query: '{data_rephrase_questions[item]}'")
             rephrase_query_embedding = rephrased_query_embeddings[item]
             rephrase_best_idx, rephrase_best_score = compute_similarity_with_activations(rephrase_query_embedding, activation_embeddings)

@@ -52,9 +52,7 @@ class LoreftIntervention_Implicit(
             kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
         
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
-        # Bottleneck Principle: Add noise to hidden representations
         self.noise_std = kwargs.get("noise_std", 0.0)
-        # Key consistency parameters
         self.dropout_rate = kwargs.get("dropout_rate", 0.0)
         self.dropout = torch.nn.Dropout(self.dropout_rate)
         self.index=None
@@ -68,25 +66,20 @@ class LoreftIntervention_Implicit(
         
         consistency_loss = None
         
-        # Apply Bottleneck Principle: Add noise to hidden representations during training
         if self.training and self.noise_std > 0:
             noise = torch.randn_like(base) * self.noise_std
             base_with_noise = base + noise
         else:
             base_with_noise = base
             
-        # Key consistency training during training phase
         if self.training :
-            # Step 1: Create noisy input h'
+            
             if self.dropout_rate>0:
-                # Option 1: Dropout noise - h' = Dropout(h)
                 base_noisy = self.dropout(base)
             else:
-                # Option 2: Gaussian noise - h' = h + ε
                 epsilon = torch.randn_like(base) * self.noise_std
                 base_noisy = base + epsilon
             
-            # Step 2: Calculate consistency loss L_key_consistency = ||R(h') - R(h)||_2
             R_h = self.rotate_layer(base)  # R(h)
             R_h_prime = self.rotate_layer(base_noisy)  # R(h')
             consistency_loss = torch.nn.functional.mse_loss(R_h_prime, R_h)
@@ -98,7 +91,6 @@ class LoreftIntervention_Implicit(
         
         output = self.dropout(output.to(base.dtype))
         
-        # Store consistency loss for trainer access
         if self.training and consistency_loss is not None:
             self._last_consistency_loss = consistency_loss
         else:
@@ -121,13 +113,9 @@ class LoreftIntervention_Implicit(
         return state_dict
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        """
-        Overwrite for data-efficiency.
-        """
+      
         self.learned_source.load_state_dict(state_dict, strict=False)
 
-        # Caveat: without creating a new layer, it might not work (still not sure why)
-        # We have to recreate a layer, and load back the columns.
         overload_w = state_dict["rotate_layer"].to(
             self.learned_source.weight.device)
         overload_w_width = overload_w.shape[-1]
@@ -168,7 +156,6 @@ class LoreftIntervention_Adv_Explicit(
     def forward(
         self, base, source=None, subspaces=None
     ):
-        # Base states (optionally add tiny gaussian noise at start for stability)
         if self.training and self.init_noise_std > 0:
             base_start = base + torch.randn_like(base) * self.init_noise_std
         else:
@@ -179,23 +166,18 @@ class LoreftIntervention_Adv_Explicit(
             source_acts = self.act_fn(self.learned_source(hidden_states))
             return torch.matmul((source_acts - rotated), self.rotate_layer.weight.T)
 
-        # Only perform adversarial PGD when training AND gradients are enabled
         if self.training and torch.is_grad_enabled() and self.adv_epsilon > 0 and self.adv_steps > 0:
-            # Projected Gradient Descent (PGD) in representation space
             adv = torch.zeros_like(base_start)
             step_size = self.adv_epsilon / float(self.adv_steps)
 
-            # Optional random init within the epsilon-ball
             if self.init_noise_std > 0:
                 adv = adv + torch.randn_like(adv) * min(self.init_noise_std, self.adv_epsilon)
 
-            # Helper: projection into l2 or linf ball around base_start
             def project_onto_ball(center: torch.Tensor, pert: torch.Tensor) -> torch.Tensor:
                 diff = pert
                 if self.adv_norm == "linf":
                     diff = torch.clamp(diff, min=-self.adv_epsilon, max=self.adv_epsilon)
                     return diff
-                # l2 projection
                 diff_norm = torch.norm(diff, p=2, dim=-1, keepdim=True) + 1e-12
                 scale = torch.clamp(self.adv_epsilon / diff_norm, max=1.0)
                 return diff * scale
@@ -206,7 +188,6 @@ class LoreftIntervention_Adv_Explicit(
             base_adv.requires_grad_(True)
             for _ in range(self.adv_steps):
                 corr = low_rank_correction(base_adv)
-                # Proxy objective: maximize correction magnitude
                 proxy = (corr.pow(2).sum(dim=-1)).mean()
                 grad, = torch.autograd.grad(proxy, base_adv, retain_graph=False, create_graph=False)
 
@@ -217,7 +198,7 @@ class LoreftIntervention_Adv_Explicit(
                     step = step_size * grad / grad_norm
 
                 base_adv = base_adv.detach() + step
-                # Re-project to epsilon ball around base_start
+                
                 adv = base_adv - base_start
                 adv = project_onto_ball(base_start, adv)
                 base_adv = (base_start + adv).detach()
@@ -292,7 +273,6 @@ class LoreftIntervention_Explicit(
     def forward(
         self, base, source=None, subspaces=None
     ):
-        # Base states (optionally add tiny gaussian noise at start for stability)
         if self.training and self.init_noise_std > 0:
             hidden_for_edit = base + torch.randn_like(base) * self.init_noise_std
         else:
@@ -306,9 +286,7 @@ class LoreftIntervention_Explicit(
         return self.dropout(output.to(base.dtype))
 
     def state_dict(self, *args, **kwargs):
-        """
-        Overwrite for data-efficiency.
-        """
+    
         state_dict = OrderedDict()
         for k, v in self.learned_source.state_dict().items():
             state_dict[k] = v
@@ -316,13 +294,8 @@ class LoreftIntervention_Explicit(
         return state_dict
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        """
-        Overwrite for data-efficiency.
-        """
-        self.learned_source.load_state_dict(state_dict, strict=False)
+       self.learned_source.load_state_dict(state_dict, strict=False)
 
-        # Caveat: without creating a new layer, it might not work (still not sure why)
-        # We have to recreate a layer, and load back the columns.
         overload_w = state_dict["rotate_layer"].to(
             self.learned_source.weight.device)
         overload_w_width = overload_w.shape[-1]

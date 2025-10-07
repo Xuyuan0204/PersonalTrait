@@ -7,7 +7,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from plotnine import ggplot, aes, geom_line, theme_minimal
 from matplotlib.ticker import MaxNLocator
-plt.rcParams.update({'font.size': 20, 'font.family': 'Sans'})
 from rouge_score import rouge_scorer
 import torch
 import transformers

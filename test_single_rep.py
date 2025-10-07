@@ -7,8 +7,6 @@ from typing import Dict, Optional, Sequence
 import pandas as pd
 import matplotlib.pyplot as plt
 from plotnine import ggplot, aes, geom_line, theme_minimal
-
-plt.rcParams.update({'font.size': 20, 'font.family': 'Sans'})
 from rouge_score import rouge_scorer
 import torch
 import torch.nn.functional as F
@@ -40,7 +38,7 @@ bert_score_model = SentenceTransformer("all-MiniLM-L6-v2")
 @dataclass
 class ReftHyperparameters:
     num_samples: int = 10
-    rank: int = 4  # low_rank_dimension
+    rank: int = 4 
     target_layer: int = 15,
     model_name = "meta-llama/Llama-3.1-8B-Instruct"
     dataset: str = "unke_v3"
@@ -56,26 +54,19 @@ def load_activation_embeddings(activation_path):
     """Load and preprocess activation embeddings from .pt file"""
     activations = torch.load(activation_path, map_location='cpu')
     
-    # Handle list of tensors case
     if isinstance(activations, list):
         activations = torch.stack(activations)
     
-    # Squeeze if necessary (shape [N, 1, D] -> [N, D])
     if len(activations.shape) == 3 and activations.shape[1] == 1:
         activations = activations.squeeze(1)
     
     return activations
 
 def compute_similarity_with_activations(query_embedding, activation_embeddings):
-    """
-    Compute cosine similarity between query embedding and activation embeddings.
-    Returns index of most similar activation.
-    """
-    # Normalize embeddings for cosine similarity
+
     query_norm = F.normalize(query_embedding.unsqueeze(0), p=2, dim=1)
     activation_norm = F.normalize(activation_embeddings, p=2, dim=1)
     
-    # Compute similarities
     similarities = torch.mm(query_norm, activation_norm.T).squeeze(0)
     
     # Return index of highest similarity
@@ -85,13 +76,12 @@ def compute_similarity_with_activations(query_embedding, activation_embeddings):
     return best_idx, best_score
 
 def load_reft_adapter(reft_model, adapter_weights_dir, adapter_idx, device, config):
-    """Load specific adapter weights into the ReFT model"""
+
     adapter_path = os.path.join(adapter_weights_dir, f"adapter_{adapter_idx}")
     
     if not os.path.exists(adapter_path):
         raise FileNotFoundError(f"Adapter directory not found: {adapter_path}")
     
-    # Load intervention weights - reuse existing loading function
     reft_config = ReftConfig(representations={
         "layer": config.target_layer, "component": "block_output",
         "intervention": LoreftIntervention(
@@ -123,12 +113,10 @@ def evaluate_rep(config):
     if config.test_rephrase:
         data_rephrase_questions = [sample["para_question"] for sample in data_samples]
         
-    # Load activation embeddings for similarity comparison
-    print(f"Loading activation embeddings from {config.activation_path}...")
+   
     activation_embeddings = load_activation_embeddings(config.activation_path)[:config.num_samples].to(device)
     print(f"Loaded {activation_embeddings.shape[0]} activation embeddings with dimension {activation_embeddings.shape[1]}")
     
-    # Load query embeddings
     print(f"Loading original query embeddings from {config.original_query_activation_path}...")
     original_query_embeddings = load_activation_embeddings(config.original_query_activation_path)[:config.num_samples].to(device)
     print(f"Loaded {original_query_embeddings.shape[0]} original query embeddings")
@@ -138,7 +126,7 @@ def evaluate_rep(config):
         rephrased_query_embeddings = load_activation_embeddings(config.rephrased_query_activation_path)[:config.num_samples].to(device)
         print(f"Loaded {rephrased_query_embeddings.shape[0]} rephrased query embeddings")
         
-    # Validate that we have enough query embeddings for the number of samples
+    
     if original_query_embeddings.shape[0] < config.num_samples:
         raise ValueError(f"Not enough original query embeddings: {original_query_embeddings.shape[0]} < {config.num_samples}")
     
@@ -146,20 +134,16 @@ def evaluate_rep(config):
         raise ValueError(f"Not enough rephrased query embeddings: {rephrased_query_embeddings.shape[0]} < {config.num_samples}")
         
 
-    # load model (take 1 min)
     model = transformers.AutoModelForCausalLM.from_pretrained(
         config.model_name, device_map=device)
 
 
 
-    # get tokenizer
     model_max_length = 2048
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         config.model_name, model_max_length=model_max_length, 
         padding_side="right", use_fast=False)
     tokenizer.pad_token = tokenizer.unk_token
-
-    # Initialize ReFT model structure (without loading specific weights yet)
     print("Initializing ReFT model structure...")
     reft_config = ReftConfig(representations={
         "layer": config.target_layer, "component": "block_output",
@@ -190,10 +174,7 @@ def evaluate_rep(config):
     results = []
     for data_idx, item in enumerate(range(len(batch_triggers))):
         print("==="*30)
-        print(f"Processing item {item+1}/{len(batch_triggers)}")
-        
-        # For original query: use pre-computed embedding and select adapter
-        print(f"Original query: '{data_questions[item]}'")
+       
         query_embedding = original_query_embeddings[item]
         best_idx, best_score = compute_similarity_with_activations(query_embedding, activation_embeddings)
        
@@ -235,9 +216,7 @@ def evaluate_rep(config):
         }
 
         if config.test_rephrase:
-            # For rephrased query: use pre-computed embedding and select adapter (possibly different)
             
-            print(f"Rephrased query: '{data_rephrase_questions[item]}'")
             rephrase_query_embedding = rephrased_query_embeddings[item]
             rephrase_best_idx, rephrase_best_score = compute_similarity_with_activations(rephrase_query_embedding, activation_embeddings)
             
@@ -256,9 +235,7 @@ def evaluate_rep(config):
                 early_stopping=True
             )
             generated_text_rephrase = tokenizer.decode(steered_response_rephrase[0][len(test_prompt_tokens_rephrase["input_ids"][0]):], skip_special_tokens=True)
-            print("\nRephrased query generated output:")
-            print(generated_text_rephrase)
-            
+          
             score_rephrase = scorer.score(batch_rephrase_sequences[item], generated_text_rephrase)
             rouge_score_rephrase = score_rephrase["rougeL"].recall
             ref_embedding_rephrase = bert_score_model.encode(batch_rephrase_sequences[item], convert_to_tensor=True)
