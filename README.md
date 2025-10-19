@@ -4,6 +4,14 @@
 
 **RILKE** (<u>R</u>epresentation <u>I</u>ntervention for <u>L</u>ifelong <u>K</u>nowledg<u>E</u> Control) is a comprehensive training and testing framework for lifelong knowledge editing. It implements an innovative approach to model editing using ReFT (Representation Fine-Tuning) with activation-based intervention selection.
 
+## Environment
+
+To create the environment for this model, please run:
+
+```bash
+conda create --name <env> --file requirements.txt
+```
+
 ## Architecture
 
 The system consists of two main methods: Individual Training and Clustered Training in Shared Subspace. We introduce them below:
@@ -12,7 +20,7 @@ The system consists of two main methods: Individual Training and Clustered Train
 
 ### 1. Data Preparation
 
-For individual training, we first need to store the corresponding activations at the target layer using `store_activation.py`.
+For individual data training (one intervention module for a single data point), we first store the corresponding activations at the target layer using `store_activation.py`.
 
 Example script:
 
@@ -34,12 +42,12 @@ For **RILKE**'s individual training, we use `no_batched_train.py`.
 
 - **Supported Intervention Types**:
   - `Vanilla`: Standard ReFT intervention
-  - `Explicit`: Enhanced ReFT with explicit regularization, as described in Section 4.1
+  - `Explicit`: Enhanced ReFT with explicit regularization, as described in Section 4.1 in our paper
 
 #### Command Line Interface
 
 ```bash
-python no_batched_train.py  --record True  --adv_train_method Vanilla --wandb_project unke_single_explicit_v3 --dataset unke --output_dir single_explicit_unke --rank 4  --epochs 1000  --noise_std 0.002 --drop_out 0.05 --lambda_consistency 0.001
+python no_batched_train.py  --record True  --adv_train_method Vanilla --wandb_project unke_single_explicit_v3 --dataset unke --output_dir single_explicit_unke --rank 4  --epochs 1000  --lambda_consistency 0.001
 ```
 
 #### Key Arguments
@@ -50,7 +58,6 @@ python no_batched_train.py  --record True  --adv_train_method Vanilla --wandb_pr
 - `--save_weights_dir`: Directory to save intervention weights
 - `--record`: Enable W&B logging
 - `--rank`: Rank of intervention module
-- `--drop_out`: Dropout rate for intervention module
 - `--noise_std`: Noise control term $\varepsilon$, as described in Section 4.1
 - `--epochs`: Number of epochs for training intervention module
 - `--learning_rate`: Learning rate for training intervention module
@@ -67,12 +74,12 @@ To test **RILKE**'s performance at inference, we use `test_rep.py`. It contains 
 
 - **Dual Query Evaluation**:
   - Tests on original questions
-  - Tests on paraphrased versions to measure consistency
+  - Tests on paraphrased versions to measure generalizability
 
-- **Performance Metrics**: ROUGE-L recall and BERT cosine similarity
+- **Performance Metrics**: We evaluate lexical similarity using ROUGE-L and semantic similarity using BERT cosine similarity
 
 
-### Command Line Interface
+### Command Example
 
 ```bash
 python test_single_rep.py --dataset unke \
@@ -97,7 +104,7 @@ python test_single_rep.py --dataset unke \
 - `--rank`: Rank of trained intervention module
 
 
-We also provide a uniform interface for training and then evaluating individual settings in `train_test.py`:
+We also provide a unified interface for training and then evaluating individual settings in `train_test.py`:
 
 ```bash
 python train_test.py \
@@ -117,7 +124,7 @@ python train_test.py \
  --model_name Qwen/Qwen2.5-7B-Instruct
 ```
 
-Additionally, to test on the MMLU dataset, first run `python store_activation_mmlu.py` to store activations of the MMLU dataset, then use `python mmlu_eval.py` to generate output on MMLU.
+Additionally, to test on the MMLU dataset, first run `python store_activation_mmlu.py` to store per-data activations of the MMLU dataset, then use `python mmlu_eval.py` to generate output on MMLU, which first retrieves the corresponding intervention for each data point and then applies the target intervention if activated.
 
 ### Example Output
 
@@ -125,11 +132,11 @@ We provide an example output of our method at: `result/single_explicit_unke/unke
 
 ## 2. Clustered Training
 
-Clustered training follows the same methodology as individual training, with an additional step to cluster representations into semantically homogeneous, size-bounded groups:
+Clustered training targets using a shared intervention for semantically similar data. Its training paradigm follows the same methodology as individual training, with an additional step to cluster representations into semantically homogeneous, size-bounded groups:
 
 ### 1. Data Preparation
 
-For clustered training, we first need to cluster the corresponding activations at the target layer using `cluster_activation.py`.
+For clustered training, we first cluster the corresponding activations at the target layer using `cluster_activation.py`.
 
 Example script:
 

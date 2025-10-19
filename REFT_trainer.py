@@ -34,7 +34,6 @@ class ReftTrainerImplicit(ReftTrainerForCausalLM):
         
     
         if num_consistency_interventions > 0:
-            # Average consistency loss across interventions
             avg_consistency_loss = total_consistency_loss / num_consistency_interventions
             loss = loss + self.lambda_consistency * avg_consistency_loss
             
