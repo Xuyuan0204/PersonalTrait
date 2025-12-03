@@ -9,21 +9,15 @@ import copy
 import json
 import yaml
 from datasets import load_dataset, Dataset, concatenate_datasets
-from peft import get_peft_model, LoraConfig
 from torch.utils.data import DataLoader
-import evaluate
-import pdb
 from tqdm import tqdm
 from transformers import AutoModel,AutoTokenizer
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 from torch import Tensor
 import os
-from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN, OPTICS
-from src.dataset.unke import UnkeForDirectOpt
-from src.dataset.wiki import WikiForDirectOpt
-from src.dataset.akew import CounterFactForDirectOpt
-from k_means_constrained import KMeansConstrained
-from src.dataset.anyedit import AnyEditForDirectOpt
+
+
+from src.dataset.bigfive import BigFiveForDirectOpt
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -178,9 +172,6 @@ class GetHookedValue:
         self.device = device
         self.activations = {}
         self.handles = []
-    
-
-        # Load the tokenizer and model
         self.model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
         self.tokenizer=tokenizer
 
@@ -250,25 +241,12 @@ def store_activations(model_name="meta-llama/Llama-3.1-8B-Instruct", dataset_nam
 
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if dataset_name == "unke":
-        edit_dataset = UnkeForDirectOpt().get_dataset()
-    elif dataset_name == "unke_v3":
-        edit_dataset = UnkeForDirectOpt().get_dataset_v3()
-    elif dataset_name == "wiki":
-        edit_dataset = WikiForDirectOpt().get_dataset()
-    elif dataset_name == "counterfact":
-        edit_dataset = CounterFactForDirectOpt().get_dataset()
-    elif dataset_name == "anyedit":
-        edit_dataset = AnyEditForDirectOpt().get_dataset()
+    if dataset_name == "bigfive":
+        edit_dataset = BigFiveForDirectOpt().get_dataset()
 
-        
-    # edit_dataset=edit_dataset.select(range(500))
+    breakpoint()
+    dataset=edit_dataset.select(range(500))
     
-    if only_question is True:
-        dataset=edit_dataset.map(preprocess_only_question,batched=True,remove_columns=edit_dataset.column_names,fn_kwargs={'tokenizer': tokenizer,'dataset_name':dataset_name, 'data_src':data_src})
-
-    else:
-        dataset=edit_dataset.map(preprocess_answer,batched=True,remove_columns=edit_dataset.column_names,fn_kwargs={'tokenizer': tokenizer,'dataset_name':dataset_name, 'data_src':data_src})
     
 
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -288,12 +266,9 @@ def store_activations(model_name="meta-llama/Llama-3.1-8B-Instruct", dataset_nam
     
 
 if __name__ == "__main__":
-    # store_activations(dataset_name="anyedit", only_question=True, data_src="rephrased")
-    # store_activations(dataset_name="anyedit", only_question=True, data_src="original")
     argparse = argparse.ArgumentParser()
-    argparse.add_argument("--dataset_name", type=str, default="unke_v3")
-    argparse.add_argument("--only_question", type=bool, default=True)
-    argparse.add_argument("--data_src", type=str, default="original")
+    argparse.add_argument("--dataset_name", type=str, default="bigfive")
+    argparse.add_argument("--only_question", type=bool, default=False)
     argparse.add_argument("--model_name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
     args = argparse.parse_args()
-    store_activations(model_name=args.model_name, dataset_name=args.dataset_name, only_question=args.only_question, data_src
+    store_activations(model_name=args.model_name, dataset_name=args.dataset_name, only_question=args.only_question, data_src="original")

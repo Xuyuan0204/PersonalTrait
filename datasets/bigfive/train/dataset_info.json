@@ -1,0 +1,90 @@
+{
+  "builder_name": "csv",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "big5_chat",
+  "dataset_size": 91999403,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/wenkai-li/big5_chat@adf1cd37997b498ff7b220827eaacdeb8aa6d905/big5_chat_dataset.csv": {
+      "num_bytes": 88551712,
+      "checksum": null
+    }
+  },
+  "download_size": 88551712,
+  "features": {
+    "env_idx": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "trait": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "level": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "train_instruction": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "train_input": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "train_output": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "head": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "relation": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "tail": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "literal": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "narrative": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "personx": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "persony": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "original_index": {
+      "dtype": "int64",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 180551115,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 91999403,
+      "num_examples": 100000,
+      "dataset_name": "big5_chat"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
